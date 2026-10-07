@@ -46,32 +46,18 @@ is what makes Vue, Svelte, and vanilla embeds — and the
 
 ## Weight and dependencies
 
-Every figure below is minified and gzipped — what a browser actually
-downloads, not the unpacked size npm shows on a package page. Competitor
-numbers come from [Bundlephobia](https://bundlephobia.com/package/tldraw);
-Quickdraw is measured the same way.
-
-| | Bundle (min + gzip) | Runtime dependencies |
-|---|---|---|
-| tldraw 5.2.5 | 496 kB | 14 |
-| Excalidraw 0.18.1 | 344 kB | 31 |
-| **Quickdraw 0.1.3** | **25 kB** | **0** |
-
-So the Quickdraw core is roughly 20× lighter than tldraw and 14× lighter
-than Excalidraw. For scale in the other direction: the entire Quickdraw
-editor is about half the size of [Konva](https://konvajs.org) (53 kB), and
-Konva is a canvas scene graph — not a whiteboard. You'd still have to build
-selection, undo, and tools on top of it.
-
-Add ~2 kB gzipped for `quickdraw.css` if you ship the default styling, and
-note that the React Native package lands at 28 kB because it inlines the
-board for the WebView.
+- **tldraw**: a full editor framework — powerful, correspondingly large,
+  with a substantial dependency tree.
+- **Excalidraw**: also big; you're embedding the Excalidraw app experience,
+  assets and all.
+- **Quickdraw**: the core is ~46 kB unpacked with **zero runtime
+  dependencies**, no build step required. It's a whiteboard, not a platform.
 
 The flip side of weight is capability: tldraw's shape and tool plugin
 system is the richest of the three, and Excalidraw ships years of
 accumulated features (component libraries, rich export options,
 localization). Quickdraw ships a complete but focused whiteboard; its
-[roadmap](https://github.com/quickdrawjs/quickdraw/issues/1) is public.
+[roadmap](https://github.com/nmndwivedi/quickdraw/issues/1) is public.
 
 ## Look and feel
 
@@ -97,7 +83,7 @@ board switches between light and dark themes.
 Be honest about this one: tldraw and Excalidraw have big communities, years
 of production hardening, and large test surfaces. Quickdraw is new —
 smaller API surface, ~120 tests, one engine shared across three packages,
-and an open [issue tracker](https://github.com/quickdrawjs/quickdraw/issues)
+and an open [issue tracker](https://github.com/nmndwivedi/quickdraw/issues)
 you can actually influence. Young projects earn trust in public; that's why
 everything is MIT on GitHub.
 
@@ -113,4 +99,4 @@ everything is MIT on GitHub.
 
 Corrections welcome — licensing and features change, and we'd rather this
 page be right than flattering:
-[open an issue](https://github.com/quickdrawjs/quickdraw/issues).
+[open an issue](https://github.com/nmndwivedi/quickdraw/issues).

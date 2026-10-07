@@ -78,10 +78,9 @@ export const THEMES = {
   },
 }
 
-// Board backdrops. 'none' is bare paper; the rest dress the same lattice:
-// full rules, notebook rules only, the intersections as dots or as small
-// crosses (blueprint style), and an isometric triangle weave.
-export const GRID_IDS = ['none', 'lines', 'ruled', 'dots', 'crosses', 'iso']
+// Board backdrops. 'none' is bare paper; the other two draw the same lattice,
+// once as rules and once as the intersections only.
+export const GRID_IDS = ['none', 'lines', 'dots']
 // Lattice spacing in page px at zoom 1, and the every-Nth emphasis.
 export const GRID_STEP = 40
 export const GRID_MAJOR = 5
@@ -110,7 +109,7 @@ export const FONTS = {
   mono: "'SF Mono', ui-monospace, Menlo, monospace",
 }
 
-export const GEO_IDS = ['rectangle', 'ellipse', 'triangle', 'diamond', 'hexagon', 'star', 'cloud']
+export const GEO_IDS = ['rectangle', 'ellipse', 'triangle', 'diamond', 'hexagon', 'star']
 
 // Highlighter: wide translucent band that multiplies into the paper.
 export const HIGHLIGHT_ALPHA = 0.55

@@ -9,8 +9,7 @@ import {
 } from './palette.js'
 import {
   ptsBounds, rotWith, distToPolyline, pointInPolygon, pointInEllipse,
-  geoPolygon, ellipsePolygon, cloudPolygon, CLOUD_START, CLOUD_CURVES,
-  wobblePolyline, traceSmooth, segIntersectsBounds,
+  geoPolygon, ellipsePolygon, wobblePolyline, traceSmooth, segIntersectsBounds,
   boundsIntersect, boundsContain,
 } from './geometry.js'
 import { strokeOutline } from './freehand.js'
@@ -232,21 +231,6 @@ function geoPath(shape) {
       path.closePath()
     } else {
       path.ellipse(p.w / 2, p.h / 2, Math.max(0.5, p.w / 2), Math.max(0.5, p.h / 2), 0, 0, Math.PI * 2)
-    }
-  } else if (p.geo === 'cloud') {
-    if (p.dash === 'draw') {
-      // same treatment as the ellipse: sample the curve, wobble it, retrace
-      // smoothly — so the cloud is hand-drawn like every other shape in the
-      // default style rather than a lone crisp vector
-      const pts = wobblePolyline(cloudPolygon(p.w, p.h), shape.id, { step: 18, amp: Math.min(2, (p.w + p.h) / 160 + 0.6) })
-      traceSmooth(path, pts, true)
-      path.closePath()
-    } else {
-      path.moveTo(CLOUD_START[0] * p.w, CLOUD_START[1] * p.h)
-      for (const [c1x, c1y, c2x, c2y, ex, ey] of CLOUD_CURVES) {
-        path.bezierCurveTo(c1x * p.w, c1y * p.h, c2x * p.w, c2y * p.h, ex * p.w, ey * p.h)
-      }
-      path.closePath()
     }
   } else {
     const poly = geoPolygon(p.geo, p.w, p.h)

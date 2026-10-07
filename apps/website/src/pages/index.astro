@@ -1,13 +1,7 @@
 ---
 import Base from '../layouts/Base.astro'
 import CompareTable from '../components/CompareTable.astro'
-import StarButton from '../components/StarButton.astro'
-import StarHistory from '../components/StarHistory.astro'
-import Sponsors from '../components/Sponsors.astro'
-import { readStarHistory } from '../lib/starData.js'
 import { APP_URL, GITHUB_URL, SITE_URL } from '../consts.js'
-
-const starData = readStarHistory()
 
 const jsonLd = {
   '@context': 'https://schema.org',
@@ -72,28 +66,6 @@ const jsonLd = {
   ],
 }
 
-// Hero proof points. Sizes are measured, not rounded down: `@quickdrawjs/core`
-// bundles to 73.5 kB minified / 24.4 kB gzipped, plus 1.6 kB of gzipped CSS.
-const badges = [
-  {
-    label: 'MIT licensed',
-    hue: '#2f6fed',
-    // Two bold shapes, not a five-stroke balance — anything finer turns to
-    // mush at 11px. Square, cube and circle also keep the three distinct.
-    icon: `<rect x="3.4" y="3.4" width="17.2" height="17.2" rx="5.2"/><path d="m8.2 12.1 2.7 2.7 4.9-5.6"/>`,
-  },
-  {
-    label: '25 kB min+gzip',
-    hue: '#0f9d58',
-    icon: `<path d="M12 2.9 20.6 7.5v9L12 21.1 3.4 16.5v-9z" stroke-linejoin="round"/><path d="M3.4 7.5 12 12.1l8.6-4.6"/><path d="M12 12.1v9"/>`,
-  },
-  {
-    label: 'Zero dependencies',
-    hue: '#d97706',
-    icon: `<circle cx="12" cy="12" r="8.6"/><path d="m6 18 12-12"/>`,
-  },
-]
-
 // Each feature card carries its own hue (--c) and a hand-drawn-ish line icon.
 const features = [
   {
@@ -138,14 +110,7 @@ const features = [
   <main>
     <section class="hero">
       <div class="copy">
-        <ul class="badges">
-          {badges.map((b) => (
-            <li style={`--c: ${b.hue}`}>
-              <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" set:html={b.icon} />
-              {b.label}
-            </li>
-          ))}
-        </ul>
+        <p class="eyebrow">MIT licensed · Zero dependencies</p>
         <h1>The <span class="scribble">open&#8209;source</span> whiteboard&nbsp;SDK</h1>
         <p class="lede">
           A complete infinite-canvas whiteboard for React, React&nbsp;Native,
@@ -154,7 +119,11 @@ const features = [
         </p>
         <div class="actions">
           <a class="btn primary" href={APP_URL} rel="noopener">Try the app</a>
-          <StarButton stars={starData.stars} />
+          <a class="btn github" href={GITHUB_URL} rel="noopener" aria-label="Star Quickdraw on GitHub">
+            <svg viewBox="0 0 16 16" width="17" height="17" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.42 7.42 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+            Star on GitHub
+            <span class="gh-count" hidden></span>
+          </a>
         </div>
         <a class="install" href="https://www.npmjs.com/package/@quickdrawjs/react" rel="noopener" title="View @quickdrawjs/react on npm">
           <span class="npm-mark" aria-hidden="true">npm</span>
@@ -164,24 +133,7 @@ const features = [
       </div>
       <div class="board-frame">
         <div id="hero-board" aria-label="Live Quickdraw whiteboard — draw here"></div>
-        <div id="hero-hint" aria-hidden="true">
-          <div class="hint-stage">
-            <div class="hint-doodle-wrap">
-            <svg class="hint-doodle" viewBox="0 0 220 90" width="220" height="90" fill="none" aria-hidden="true">
-              <path
-                class="hint-squiggle"
-                pathLength="1"
-                d="M18 62 C 40 18, 62 18, 78 50 C 92 78, 110 78, 124 50 C 138 22, 158 22, 172 44 C 182 60, 194 62, 204 52"
-                stroke="var(--accent, #e8590c)" stroke-width="4" stroke-linecap="round" />
-            </svg>
-            <svg class="hint-hand" viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="var(--ink, #1c1b18)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" fill="rgba(255,255,255,0.92)"/>
-              <path d="m15 5 4 4"/>
-            </svg>
-            </div>
-            <span class="hint-pill">Draw something!</span>
-          </div>
-        </div>
+        <p class="board-hint">Live board — go ahead, draw on it</p>
       </div>
     </section>
 
@@ -217,7 +169,7 @@ const features = [
 import '@quickdrawjs/core/quickdraw.css'
 
 export default function Board() {
-  return <Quickdraw theme="light" grid="lines" />
+  return <Quickdraw theme="light" grid="dots" />
 }`}</code></pre>
           </div>
           <div class="qs-pane" data-qs-pane="js">
@@ -264,7 +216,7 @@ createQuickdraw({
       </p>
     </section>
 
-    <section class="support" id="support">
+    <section class="support">
       <div class="support-card">
         <svg class="support-star" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 1.6l3.1 6.7 7.3.9-5.4 5 1.4 7.2L12 17.8l-6.4 3.6L7 14.2 1.6 9.2l7.3-.9L12 1.6z"/></svg>
         <h2>Built in the open. Powered by stars.</h2>
@@ -272,13 +224,12 @@ createQuickdraw({
           Quickdraw is free forever — no license fees, no upsell. If it saves
           you one, a GitHub star is how other developers find it.
         </p>
-        <StarHistory
-          starredAt={starData.starredAt}
-          createdAt={starData.createdAt}
-          stars={starData.stars}
-        />
         <div class="support-actions">
-          <StarButton stars={starData.stars} variant="cream" />
+          <a class="btn-star" href={GITHUB_URL} rel="noopener">
+            <svg viewBox="0 0 16 16" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.42 7.42 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+            Star on GitHub
+            <span class="gh-count" hidden></span>
+          </a>
           <a class="btn-npm" href="https://www.npmjs.com/package/@quickdrawjs/react" rel="noopener">
             <span class="npm-mark" aria-hidden="true">npm</span>
             @quickdrawjs/react
@@ -286,8 +237,6 @@ createQuickdraw({
         </div>
       </div>
     </section>
-
-    <Sponsors />
 
     <section class="faq" id="faq">
       <h2>Questions people ask</h2>
@@ -313,7 +262,7 @@ createQuickdraw({
       </details>
       <details>
         <summary>How big is it?</summary>
-        <p>The core engine bundles to ~73&nbsp;kB minified, ~25&nbsp;kB over the wire (gzipped), with zero runtime dependencies — plain ESM that runs in any modern browser without a build step.</p>
+        <p>The core package is ~46&nbsp;kB unpacked with zero runtime dependencies — plain ESM that runs in any modern browser without a build step.</p>
       </details>
     </section>
 
@@ -333,18 +282,11 @@ createQuickdraw({
 
   const container = document.getElementById('hero-board')
   if (container) {
-    const board = createQuickdraw({ container, theme: 'light', grid: 'lines' })
+    const board = createQuickdraw({ container, theme: 'light', grid: 'dots' })
     const { store } = board.editor
     const saved = sessionStorage.getItem('qd-hero')
     if (saved) {
       try { store.loadSnapshot(JSON.parse(saved), 'remote') } catch {}
-    }
-    // "draw something" nudge: only over an untouched board, gone at first touch
-    const hint = document.getElementById('hero-hint')
-    if (hint) {
-      const hide = () => hint.classList.add('off')
-      if (store.shapes().length > 0) hide()
-      else container.addEventListener('pointerdown', hide, { once: true })
     }
     let t
     store.listen(() => {
@@ -368,6 +310,30 @@ createQuickdraw({
       panes.forEach((p) => p.classList.toggle('on', p.dataset.qsPane === tab.dataset.qs))
     })
   })
+
+  // Fill in the live GitHub star count (cached per session; silent on failure).
+  const fmt = (n) => (n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k` : String(n))
+  const showStars = (n) => {
+    if (typeof n !== 'number' || n < 1) return
+    document.querySelectorAll('.gh-count').forEach((el) => {
+      el.textContent = fmt(n)
+      el.hidden = false
+    })
+  }
+  const cached = sessionStorage.getItem('qd-stars')
+  if (cached) {
+    showStars(Number(cached))
+  } else {
+    fetch('https://api.github.com/repos/nmndwivedi/quickdraw')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((repo) => {
+        if (repo && typeof repo.stargazers_count === 'number') {
+          sessionStorage.setItem('qd-stars', String(repo.stargazers_count))
+          showStars(repo.stargazers_count)
+        }
+      })
+      .catch(() => {})
+  }
 </script>
 
 <style>
@@ -380,23 +346,10 @@ createQuickdraw({
     display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
     gap: 52px; align-items: center;
   }
-  /* Small tinted chips — each carries a wash of its own hue rather than a
-     hard outline, so the row reads as one quiet line above the headline. */
-  .badges {
-    list-style: none; display: flex; flex-wrap: wrap; gap: 6px;
-    margin: 0 0 20px; padding: 0;
+  .eyebrow {
+    font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--ink-soft); margin: 0 0 16px;
   }
-  .badges li {
-    --c: var(--accent);
-    display: inline-flex; align-items: center; gap: 5px;
-    font-size: 11.5px; font-weight: 600; line-height: 1;
-    letter-spacing: 0.012em; font-variant-numeric: tabular-nums;
-    color: color-mix(in srgb, var(--c) 58%, var(--ink));
-    background: color-mix(in srgb, var(--c) 8%, #fff);
-    border: 1px solid color-mix(in srgb, var(--c) 15%, transparent);
-    border-radius: 999px; padding: 4px 10px 4px 8px;
-  }
-  .badges svg { color: var(--c); flex: none; opacity: 0.92; }
   h1 {
     font-size: clamp(34px, 4.6vw, 50px); line-height: 1.12; margin: 0 0 18px;
     letter-spacing: -0.02em; text-wrap: balance;
@@ -415,6 +368,12 @@ createQuickdraw({
   .btn:hover { text-decoration: none; background: var(--paper-2); }
   .btn.primary { background: var(--ink); color: var(--paper); }
   .btn.primary:hover { background: #000; }
+  .btn.github { display: inline-flex; align-items: center; gap: 8px; }
+  .gh-count {
+    font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums;
+    background: var(--paper-2); border: 1px solid var(--line);
+    border-radius: 999px; padding: 1px 9px; margin-left: 2px;
+  }
   .install {
     margin-top: 26px; display: inline-flex; align-items: center; gap: 12px;
     font-size: 13.5px; color: var(--ink-soft);
@@ -441,67 +400,7 @@ createQuickdraw({
     box-shadow: 0 24px 60px -28px rgba(28, 27, 24, 0.28);
     overflow: hidden; background: #fff;
   }
-  #hero-hint {
-    position: absolute; inset: 0; z-index: 5;
-    display: flex; align-items: center; justify-content: center;
-    pointer-events: none;
-  }
-  #hero-hint.off { display: none; }
-  .hint-stage {
-    position: relative;
-    display: flex; flex-direction: column; align-items: center; gap: 2px;
-  }
-  /* the wrap is exactly the SVG's box, so the hand's offset-path (element
-     coordinates) and the squiggle (SVG viewBox) share one origin */
-  .hint-doodle-wrap { position: relative; width: 220px; height: 90px; }
-  .hint-doodle { overflow: visible; display: block; }
-  .hint-squiggle {
-    stroke-dasharray: 1;
-    stroke-dashoffset: 1;
-    animation: hint-draw 3.2s ease-in-out infinite;
-  }
-  .hint-hand {
-    position: absolute; top: 0; left: 0;
-    /* same curve as .hint-squiggle, so the pencil tip rides the line */
-    offset-path: path('M18 62 C 40 18, 62 18, 78 50 C 92 78, 110 78, 124 50 C 138 22, 158 22, 172 44 C 182 60, 194 62, 204 52');
-    offset-rotate: 0deg;
-    /* offset-path anchors the glyph CENTER to the curve (Chrome has no
-       offset-anchor), so shift the box until the pencil tip — bottom-left
-       of the glyph — is what touches the line */
-    transform: translate(14px, -14px);
-    animation: hint-trace 3.2s ease-in-out infinite;
-    filter: drop-shadow(0 3px 4px rgba(28, 27, 24, 0.25));
-  }
-  @supports not (offset-path: path('M0 0 L1 1')) {
-    .hint-hand { display: none; }
-  }
-  .hint-pill {
-    display: inline-flex; align-items: center; gap: 8px;
-    padding: 9px 16px; border-radius: 999px;
-    background: rgba(255, 255, 255, 0.9);
-    border: 1.5px dashed color-mix(in srgb, var(--accent) 55%, transparent);
-    box-shadow: 0 10px 26px -14px rgba(28, 27, 24, 0.35);
-    backdrop-filter: blur(4px);
-    color: var(--ink); font-weight: 600; font-size: 14.5px;
-  }
-  /* line and pen share the same fade window (74–90%) so they vanish together */
-  @keyframes hint-draw {
-    0% { stroke-dashoffset: 1; opacity: 1; }
-    62% { stroke-dashoffset: 0; opacity: 1; }
-    74% { stroke-dashoffset: 0; opacity: 1; }
-    90%, 100% { stroke-dashoffset: 0; opacity: 0; }
-  }
-  @keyframes hint-trace {
-    0% { offset-distance: 0%; opacity: 0; }
-    6% { opacity: 1; }
-    62% { offset-distance: 100%; opacity: 1; }
-    74% { offset-distance: 100%; opacity: 1; }
-    90%, 100% { offset-distance: 100%; opacity: 0; }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .hint-squiggle { animation: none; stroke-dashoffset: 0; }
-    .hint-hand { animation: none; offset-distance: 100%; }
-  }
+  .board-hint { font-size: 13px; color: var(--ink-soft); text-align: center; margin: 12px 0 0; opacity: 0.8; }
 
   .features .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 18px; }
   .card {
@@ -605,13 +504,15 @@ createQuickdraw({
     color: rgba(244, 242, 234, 0.72); max-width: 52ch; margin: 0 auto 30px;
     text-wrap: pretty;
   }
-  .support-actions { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; align-items: center; }
-  .btn-npm {
+  .support-actions { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+  .btn-star, .btn-npm {
     display: inline-flex; align-items: center; gap: 9px;
-    padding: 12px 24px; border-radius: 999px; font-weight: 650;
-    border: 1.5px solid rgba(244, 242, 234, 0.35); color: #f4f2ea;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 14.5px;
+    padding: 12px 24px; border-radius: 999px; font-weight: 650; font-size: 15.5px;
   }
+  .btn-star { background: #f4f2ea; color: #14130f; }
+  .btn-star:hover { background: #fff; text-decoration: none; }
+  .btn-star .gh-count { background: rgba(20, 19, 15, 0.08); border-color: rgba(20, 19, 15, 0.18); }
+  .btn-npm { border: 1.5px solid rgba(244, 242, 234, 0.35); color: #f4f2ea; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 14.5px; }
   .btn-npm:hover { border-color: rgba(244, 242, 234, 0.7); background: rgba(244, 242, 234, 0.06); text-decoration: none; }
 
   .cta-final { text-align: center; padding: 30px 0 10px; }
@@ -627,13 +528,13 @@ createQuickdraw({
   @media (max-width: 640px) {
     section { margin-top: 68px; }
     .hero { margin-top: 30px; gap: 26px; }
-    .badges { gap: 5px; margin-bottom: 15px; }
-    .badges li { font-size: 11px; padding: 4px 9px 4px 7px; }
+    .eyebrow { font-size: 11.5px; letter-spacing: 0.09em; margin: 0 0 12px; }
     h1 { font-size: clamp(29px, 8.4vw, 38px); line-height: 1.14; margin-bottom: 14px; }
     .scribble { background-size: 100% 7px; padding-bottom: 6px; }
     .lede { font-size: 16px; max-width: none; margin-bottom: 24px; }
     .install { margin-top: 20px; }
     #hero-board { height: clamp(300px, 52vh, 400px); }
+    .board-hint { margin-top: 10px; }
     .support-card { padding: 42px 22px 40px; }
   }
 
@@ -642,8 +543,7 @@ createQuickdraw({
   @media (max-width: 460px) {
     .actions { display: grid; grid-template-columns: 1fr; gap: 10px; }
     .btn { padding: 13px 20px; text-align: center; font-size: 16px; }
-    .support-actions { display: grid; grid-template-columns: 1fr; gap: 10px; }
-    .btn-npm { justify-content: center; }
+    .btn.github { justify-content: center; }
     .install {
       display: flex; width: 100%;
       padding: 11px 13px; gap: 10px; font-size: 12.5px;

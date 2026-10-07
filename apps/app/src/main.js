@@ -1,5 +1,6 @@
 import { createQuickdraw } from '@quickdrawjs/core'
 import '@quickdrawjs/core/quickdraw.css'
+import { createSync } from './sync.js'
 
 const LEGACY_DOC_KEY = 'quickdraw-app-doc'
 const THEME_KEY = 'quickdraw-app-theme'
@@ -12,7 +13,7 @@ const theme = localStorage.getItem(THEME_KEY) || (prefersDark ? 'dark' : 'light'
 const board = createQuickdraw({
   container: document.getElementById('board'),
   theme,
-  grid: 'lines',
+  grid: 'dots',
 })
 
 const { editor } = board
@@ -54,11 +55,41 @@ if (!index) {
 const currentFile = () =>
   index.files.find((f) => f.id === index.current) || index.files[0]
 
-// ---- persistence ------------------------------------------------------------
-let saveTimer
+// ---- sync（多端实时同步）----------------------------------------------
+// 同步域：个人应用阶段，所有端固定进入同一个画布房间 (main/default)——
+// 打开应用即共享同一块画布，无需加入房间或分享链接。
+// 预留扩展：做多画布/多人时，将 SYNC_FILE 换成 URL ?file= 参数，或在
+// openFile() 中恢复 sync.setFile(file.id)（sync.js 已实现按 file 换房重连）。
+const SYNC_ROOM = 'main'
+const SYNC_FILE = 'default'
 
+// 持久化目标：localStorage → 网络（localStorage 降级为离线缓存）。
+// 本地操作经 store.listen({source:'user'}) 发出；远端变更一律 applyDiff(..., 'remote')，
+// 不进本地 undo 栈，也不会被再次 publish，天然无回声循环。
+const sync = createSync({ store, room: SYNC_ROOM, file: SYNC_FILE })
+
+const connEl = document.getElementById('sync-status')
+sync.on('status', (s) => {
+  document.documentElement.dataset.sync = s.kind
+  if (!connEl) return
+  connEl.dataset.state = s.kind
+  if (s.kind === 'online') {
+    connEl.textContent = `已连接${s.peers > 1 ? ` · ${s.peers} 端` : ''}`
+  } else if (s.kind === 'reconnecting') {
+    connEl.textContent = `重连中(${Math.ceil(s.delay / 1000)}s)`
+  } else {
+    connEl.textContent = '离线'
+  }
+})
+sync.connect()
+
+// 首连采用服务端共享画布后，对齐视野到内容（本地为空/旧缓存被覆盖时）
+sync.on('snapshot', () => {
+  if (Object.keys(store.getSnapshot()?.document?.store || {}).length) editor.fitContent()
+})
+
+// localStorage 降级为本地缓存：网络同步之外留一份，离线也能打开
 function saveNow() {
-  clearTimeout(saveTimer)
   const file = currentFile()
   try {
     localStorage.setItem(fileKey(file.id), JSON.stringify(store.getSnapshot()))
@@ -74,6 +105,8 @@ function openFile(id, { fit = true } = {}) {
   if (!file) return
   index.current = file.id
   saveIndex()
+  // 同步域固定为 SYNC_ROOM/SYNC_FILE（见上）：本地多文件与网络同步解耦，
+  // 文件切换不再换房。将来做画布级同步时在此恢复：sync.setFile(file.id)
   let snap = null
   try {
     const raw = localStorage.getItem(fileKey(file.id))
@@ -90,10 +123,18 @@ function openFile(id, { fit = true } = {}) {
   nameInput.value = file.name
 }
 
-store.listen(() => {
-  clearTimeout(saveTimer)
-  saveTimer = setTimeout(saveNow, 400)
-})
+// 远端 diff 已在 sync.js 内 applyDiff(..., 'remote') 应用；此处仅挂 UI 钩子
+// 本地操作 → 攒批发到服务端（一帧一次）
+store.listen((diff) => sync.publish(diff), { source: 'user' })
+
+// 调试钩子（只读，供自动化验证与排查用）
+window.__qd = {
+  store,
+  sync,
+  get snapshot() { return store.getSnapshot() },
+  get shapes() { return Object.keys(store.getSnapshot()?.document?.store || {}).length },
+  get syncState() { return document.documentElement.dataset.sync },
+}
 
 // ---- file bar UI ------------------------------------------------------------
 const filebar = document.getElementById('filebar')
@@ -224,12 +265,14 @@ nameInput.addEventListener('blur', () => {
 openFile(currentFile().id)
 sizeNameInput()
 
-// Remember the theme across visits; the chrome follows the board through the
-// root .dark class (the CSS variables up in index.html key off it).
+// Remember the theme across visits; the chrome follows the board's colors.
+const logo = document.getElementById('logo')
 const syncTheme = () => {
   const dark = editor.theme.id === 'dark'
   localStorage.setItem(THEME_KEY, editor.theme.id)
-  document.documentElement.classList.toggle('dark', dark)
+  logo.classList.toggle('dark', dark)
+  filebar.classList.toggle('dark', dark)
+  menu.classList.toggle('dark', dark)
   document.querySelector('meta[name="theme-color"]')
     ?.setAttribute('content', dark ? '#1e1e1c' : '#faf8f4')
 }

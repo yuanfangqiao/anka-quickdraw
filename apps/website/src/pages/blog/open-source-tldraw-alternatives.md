@@ -43,18 +43,16 @@ React component (`@excalidraw/excalidraw`). It's mature, actively
 maintained, and battle-tested at scale.
 
 Where it fits less well: it's React-only, the embed brings Excalidraw's own
-look and UX, and the component is a heavy dependency — 344 kB minified and
-gzipped across 31 runtime dependencies, per
-[Bundlephobia](https://bundlephobia.com/package/@excalidraw/excalidraw).
-Collaboration runs through the separate `excalidraw-room` server. If you
-want "the Excalidraw experience inside my app," it's an excellent choice.
+look and UX, and the component is a fairly large dependency. Collaboration
+runs through the separate `excalidraw-room` server. If you want "the
+Excalidraw experience inside my app," it's an excellent choice.
 
 ## Quickdraw
 
 [Quickdraw](https://tryquickdraw.com) — this project — is an MIT-licensed
 whiteboard SDK built to be embedded. The core engine is plain ESM with zero
-runtime dependencies (~25 kB minified + gzipped — about 14× lighter than
-the Excalidraw component), and the same engine ships as three packages:
+runtime dependencies (~46 kB unpacked), and the same engine ships as three
+packages:
 
 - `@quickdrawjs/core` — any web page, no framework, no build step
 - `@quickdrawjs/react` — a `<Quickdraw />` component with an imperative ref
@@ -89,16 +87,9 @@ gestures, palm rejection. Budget for that before you commit.
 | React | Yes | Yes | Yes |
 | No-framework JS | **Yes** | No | No |
 | React Native | **Yes** | No | No |
-| Bundle (min + gzip) | **~25 kB** | ~344 kB | ~496 kB |
-| Runtime dependencies | **Zero** | 31 | 14 |
+| Core dependencies | **Zero** | Several | Many |
 | Community size | Young | Very large | Large |
 | First-party sync server | Not yet | excalidraw-room | Paid (tldraw sync) |
-
-Sizes are minified + gzipped, from
-[Bundlephobia](https://bundlephobia.com/package/tldraw) (Excalidraw 0.18.1,
-tldraw 5.2.5) with Quickdraw measured the same way. Both alternatives are
-heavier because both do more — that trade is the whole point of this page,
-not a knock on either project.
 
 ## Choosing
 
@@ -108,7 +99,7 @@ not a knock on either project.
 - **You only need ink and enjoy building canvases:** perfect-freehand.
 - **The license cost is fine for your business:** tldraw remains excellent.
 
-Quickdraw is [open to contributions](https://github.com/quickdrawjs/quickdraw).
+Quickdraw is [open to contributions](https://github.com/nmndwivedi/quickdraw).
 If the missing feature that sent you back to a paid SDK is on the
-[roadmap](https://github.com/quickdrawjs/quickdraw/issues/1), tell us — or
+[roadmap](https://github.com/nmndwivedi/quickdraw/issues/1), tell us — or
 build it with us.

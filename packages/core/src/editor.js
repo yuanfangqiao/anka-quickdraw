@@ -18,7 +18,7 @@ const RESIZE_CURSORS = {
   tl: 'nwse-resize', br: 'nwse-resize', tr: 'nesw-resize', bl: 'nesw-resize',
   t: 'ns-resize', b: 'ns-resize', l: 'ew-resize', r: 'ew-resize',
 }
-const DEFAULT_STYLES = { color: 'blue', size: 'm', dash: 'draw', fill: 'none', font: 'draw' }
+const DEFAULT_STYLES = { color: 'black', size: 'm', dash: 'draw', fill: 'none', font: 'draw' }
 
 export const TOOLS = ['select', 'hand', 'draw', 'highlight', 'eraser', 'laser', 'arrow', 'line', 'geo', 'text', 'note']
 
@@ -32,11 +32,11 @@ const bendMidpoint = (pr) => {
 }
 
 export class Editor {
-  constructor({ container, store, theme = 'light', grid = 'lines', readonly = false, camera, styles, geoKind } = {}) {
+  constructor({ container, store, theme = 'light', grid = 'none', readonly = false, camera, styles, geoKind } = {}) {
     this.container = container
     this.store = store || new Store()
     this.theme = themeOf(theme)
-    this.grid = GRID_IDS.includes(grid) ? grid : 'lines'
+    this.grid = GRID_IDS.includes(grid) ? grid : 'none'
     this.readonly = !!readonly
     this.camera = camera || { x: 0, y: 0, z: 1 }
     this.styles = { ...DEFAULT_STYLES, ...(styles || {}) }
@@ -260,40 +260,10 @@ export class Editor {
   setTheme(id) {
     const t = themeOf(id)
     if (t === this.theme) return
-    this._crossfadeTheme()
     this.theme = t
     this.container.dataset.qdTheme = t.id
     this.requestRender()
     this.emit('theme')
-  }
-  // Freeze the outgoing theme as a bitmap over the board and fade it out, so
-  // a theme switch melts from one paper to the other instead of hard-cutting.
-  _crossfadeTheme() {
-    if (this._destroyed) return
-    if (typeof window !== 'undefined' &&
-        window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return
-    const w = this.canvas.width, h = this.canvas.height
-    if (!w || !h) return
-    try {
-      const snap = document.createElement('canvas')
-      snap.width = w
-      snap.height = h
-      snap.getContext('2d').drawImage(this.canvas, 0, 0)
-      snap.className = 'qd-theme-fade'
-      this._themeFade?.remove()
-      this._themeFade = snap
-      this.overlay.after(snap)
-      // two frames: one to paint at full opacity, one to start the transition
-      requestAnimationFrame(() => requestAnimationFrame(() => { snap.style.opacity = '0' }))
-      const done = () => {
-        snap.remove()
-        if (this._themeFade === snap) this._themeFade = null
-      }
-      snap.addEventListener('transitionend', done, { once: true })
-      setTimeout(done, 600) // safety net if transitionend never fires
-    } catch {
-      // a stubbed 2D context (tests, exotic embeds) just skips the fade
-    }
   }
   // 'none' | 'lines' | 'dots' — the backdrop behind the drawing
   setGrid(id) {
@@ -463,6 +433,15 @@ export class Editor {
     c.addEventListener('drop', this._onDrop)
     c.addEventListener('dragover', this._onDragOver)
     c.addEventListener('paste', this._onPaste)
+    // iPadOS with a mouse/trackpad — and iOS 13.4+ long press — offers a native
+    // context menu on the board instead of a stroke. The board owns its
+    // gestures outright; the CSS guards above already kill the touch callout,
+    // this covers the pointer-device path it can't reach.
+    this._onContextMenu = (e) => {
+      if (e.target !== this.canvas && e.target !== this.overlay && e.target !== this.container) return
+      e.preventDefault()
+    }
+    c.addEventListener('contextmenu', this._onContextMenu)
     // losing focus mid-gesture (a host app may reclaim the space key by
     // blurring the board) must not leave a sticky space-pan behind
     this._onBlur = () => { this.spaceHeld = false; this._syncCursor() }
@@ -901,7 +880,7 @@ export class Editor {
     this.store.put({
       id, typeName: 'shape', type: 'note', x: p.x - NOTE_W / 2, y: p.y - NOTE_W / 2, rot: 0,
       z: this.store.maxZ() + 1,
-      props: { text: '', color: this.styles.color === DEFAULT_STYLES.color ? 'yellow' : this.styles.color, size: 'm', font: this.styles.font, scale: 1 },
+      props: { text: '', color: this.styles.color === 'black' ? 'yellow' : this.styles.color, size: 'm', font: this.styles.font, scale: 1 },
     })
     this.setTool('select')
     this.setSelection([id])
@@ -1262,8 +1241,6 @@ export class Editor {
       else this.setTool('select')
       return
     }
-    // the UI layer listens for this and toggles the shortcuts overlay
-    if (k === '?') { e.preventDefault(); this.emit('help'); return }
     // wipe the board — two modifiers deep, and undoable like any other edit
     if (meta && e.shiftKey && (k === 'delete' || k === 'backspace')) {
       e.preventDefault()
@@ -1547,8 +1524,7 @@ export class Editor {
   // W/H are device px; the ctx must be untransformed.
   _drawGrid(ctx, cam, W, H, dpr) {
     if (this.grid === 'none' || !(cam.z > 0)) return
-    // point-like marks (dots, crosses) carry less ink, so they use the darker ramp
-    const g = this.theme.grid?.[['dots', 'crosses'].includes(this.grid) ? 'dot' : 'line']
+    const g = this.theme.grid?.[this.grid === 'dots' ? 'dot' : 'line']
     if (!g) return
     let step = GRID_STEP
     while (step * cam.z < 18) step *= 2
@@ -1565,75 +1541,32 @@ export class Editor {
     for (let m = m0, y = (m0 * step + cam.y) * z; y <= H; m++, y += step * z) rows.push([y, isMajor(m)])
 
     ctx.save()
-    if (this.grid === 'lines' || this.grid === 'ruled') {
+    if (this.grid === 'lines') {
       for (const major of [false, true]) {
         ctx.beginPath()
         // half-pixel offsets keep a 1px rule on one device pixel, not two
-        if (this.grid === 'lines') {
-          for (const [x, m] of cols) if (m === major) { const p = Math.round(x) + 0.5; ctx.moveTo(p, 0); ctx.lineTo(p, H) }
-        }
+        for (const [x, m] of cols) if (m === major) { const p = Math.round(x) + 0.5; ctx.moveTo(p, 0); ctx.lineTo(p, H) }
         for (const [y, m] of rows) if (m === major) { const p = Math.round(y) + 0.5; ctx.moveTo(0, p); ctx.lineTo(W, p) }
         ctx.strokeStyle = major ? g.major : g.minor
         ctx.globalAlpha = fade
         ctx.lineWidth = 1
         ctx.stroke()
       }
-    } else if (this.grid === 'crosses') {
-      // a small + at each intersection — the draughtsman's registration marks
+    } else {
       for (const major of [false, true]) {
-        const arm = (major ? 4.5 : 3) * dpr
+        const r = (major ? 2.3 : 1.6) * dpr
         ctx.beginPath()
         for (const [y, my] of rows) {
-          const py = Math.round(y) + 0.5
           for (const [x, mx] of cols) {
             if ((mx && my) !== major) continue
-            const px = Math.round(x) + 0.5
-            ctx.moveTo(px - arm, py); ctx.lineTo(px + arm, py)
-            ctx.moveTo(px, py - arm); ctx.lineTo(px, py + arm)
+            ctx.moveTo(x + r, y)
+            ctx.arc(x, y, r, 0, Math.PI * 2)
           }
         }
-        ctx.strokeStyle = major ? g.major : g.minor
+        ctx.fillStyle = major ? g.major : g.minor
         ctx.globalAlpha = fade
-        ctx.lineWidth = 1
-        ctx.stroke()
+        ctx.fill()
       }
-    } else if (this.grid === 'iso') {
-      // isometric weave: the two 30° diagonal families make a diamond lattice
-      // that stays self-aligned at every zoom. One quiet weight — major
-      // emphasis turns a woven field into noise.
-      const s = Math.tan(Math.PI / 6) // 30° from horizontal
-      ctx.beginPath()
-      for (const sign of [1, -1]) {
-        const slope = sign * s
-        // page-space intercepts k*step, mapped into device space
-        const b0 = -slope * cam.x + cam.y // device intercept of the k=0 line, /z
-        const lo = Math.min(0, -slope * (W / z)) // device-x range → intercept range
-        const hi = Math.max(H / z, H / z - slope * (W / z))
-        const k0 = Math.ceil((lo - b0) / step)
-        const k1 = Math.floor((hi - b0) / step)
-        for (let k = k0; k <= k1; k++) {
-          const b = (b0 + k * step) * z
-          ctx.moveTo(0, b)
-          ctx.lineTo(W, b + slope * W)
-        }
-      }
-      ctx.strokeStyle = g.minor
-      ctx.globalAlpha = fade
-      ctx.lineWidth = 1
-      ctx.stroke()
-    } else {
-      // one weight, one ink — emphasized dots read as stray marks on the paper
-      const r = 1.6 * dpr
-      ctx.beginPath()
-      for (const [y] of rows) {
-        for (const [x] of cols) {
-          ctx.moveTo(x + r, y)
-          ctx.arc(x, y, r, 0, Math.PI * 2)
-        }
-      }
-      ctx.fillStyle = g.minor
-      ctx.globalAlpha = fade
-      ctx.fill()
     }
     ctx.restore()
   }
@@ -1850,8 +1783,6 @@ export class Editor {
   destroy() {
     this._destroyed = true
     this._commitText()
-    this._themeFade?.remove()
-    this._themeFade = null
     cancelAnimationFrame(this._raf)
     cancelAnimationFrame(this._camAnim)
     cancelAnimationFrame(this._fitEaseRaf || 0)
@@ -1871,6 +1802,7 @@ export class Editor {
     c.removeEventListener('drop', this._onDrop)
     c.removeEventListener('dragover', this._onDragOver)
     c.removeEventListener('paste', this._onPaste)
+    c.removeEventListener('contextmenu', this._onContextMenu)
     c.removeEventListener('blur', this._onBlur)
     this.canvas.remove()
     this.overlay.remove()
