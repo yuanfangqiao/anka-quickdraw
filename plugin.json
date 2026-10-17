@@ -1,0 +1,20 @@
+{
+  "manifest_version": 2,
+  "id": "anka-quickdraw",
+  "name": "QuickDraw",
+  "version": "0.3.0",
+  "icon": "pen-tool",
+  "description": "白板/绘图应用",
+  "kind": "page",
+  "build": {
+    "cwd": ".",
+    "requires": ["node>=18"],
+    "steps": [
+      { "run": "npm ci --ignore-scripts" },
+      { "run": "npm run build --workspace=quickdraw-app" }
+    ],
+    "output": { "entry": "dist/index.html" },
+    "timeout": 600
+  },
+  "permissions": ["net", "write:dist"]
+}

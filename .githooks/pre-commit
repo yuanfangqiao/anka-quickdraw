@@ -1,0 +1,63 @@
+#!/bin/sh
+# 提交前版本号检查（anka-quickdraw 独立仓库）
+#
+# 约定：源码提交后必须 bump plugin.json 的 version（patch/minor/major），
+# 因为 version 是宿主判断「是否有更新」的唯一依据。
+#
+# 默认只提醒、不阻断；需要强制阻断时：
+#   VERSION_CHECK=strict git commit -m "…"
+# 单次跳过：
+#   VERSION_CHECK=off git commit -m "…"   （或 git commit --no-verify）
+#
+# 启用（在本仓库根目录执行一次，只影响本仓库）：
+#   git config core.hooksPath .githooks
+
+[ "$VERSION_CHECK" = "off" ] && exit 0
+
+root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+cd "$root" || exit 0
+
+manifest=plugin.json
+[ -f "$manifest" ] || exit 0
+
+staged=$(git diff --cached --name-only --diff-filter=ACMRD)
+[ -z "$staged" ] && exit 0
+
+# 「源码」= 除 manifest / 文档 / 钩子本身以外的路径
+code=$(printf '%s\n' "$staged" \
+  | grep -vE '^(plugin\.json|PLUGIN\.md|[^/]+\.md|docs/|\.githooks/)' \
+  | head -n 1)
+manifest_touched=$(printf '%s\n' "$staged" | grep -x "$manifest")
+
+[ -z "$code" ] && [ -z "$manifest_touched" ] && exit 0
+
+# 优先 python3，退化到 node（构建本身要求 node>=18，二者必有一）
+ver() {
+  python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])' 2>/dev/null \
+    || node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).version)}catch(e){}})'
+}
+cur=$(ver < "$manifest")
+head=$(git show "HEAD:$manifest" 2>/dev/null | ver)
+
+if [ -z "$cur" ]; then
+  echo "⚠ plugin.json 缺少可解析的 version" >&2
+  [ "$VERSION_CHECK" = "strict" ] && exit 1
+  exit 0
+fi
+
+# HEAD 里没有 manifest（首次提交）时 head 为空 ≠ cur，不提示
+if [ "$cur" = "$head" ]; then
+  {
+    echo ""
+    echo "⚠ 版本号未变：$manifest 仍是 $cur"
+    [ -n "$code" ] && echo "  本次源码改动：$code"
+    echo "  约定：先提交源码，紧随其后一个提交 bump version"
+    echo "       修复 patch / 新能力 minor / 破坏性变更 major"
+    echo "  宿主按 version 判断新旧，不 bump 会被当成同一版本。"
+    echo "  强制模式：VERSION_CHECK=strict git commit …"
+    echo ""
+  } >&2
+  [ "$VERSION_CHECK" = "strict" ] && exit 1
+fi
+
+exit 0
