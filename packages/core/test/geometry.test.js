@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest'
 import {
   clamp, lerp, boundsUnion, boundsExpand, boundsContain, boundsIntersect,
   ptsBounds, rotWith, distToSegSq, distToPolyline, pointInPolygon,
-  pointInEllipse, segIntersectsBounds, seededRand, wobblePolyline,
-  geoPolygon, ellipsePolygon,
+  pointInEllipse, segIntersectsBounds, seededRand, wobblePolyline, bowPolygon,
+  geoPolygon, ellipsePolygon, cloudPolygon,
 } from '../src/geometry.js'
 
 describe('scalars', () => {
@@ -105,6 +105,31 @@ describe('seeded wobble', () => {
   })
 })
 
+describe('hand-drawn polygons', () => {
+  it('bowPolygon is deterministic, dense, and never strays more than a calm hand would', () => {
+    const rect = [0, 0, 300, 0, 300, 200, 0, 200]
+    const a = bowPolygon(rect, 'shape:1')
+    expect(a).toEqual(bowPolygon(rect, 'shape:1'))
+    expect(a).not.toEqual(bowPolygon(rect, 'shape:2'))
+    expect(a.length / 2).toBeGreaterThan(90) // ~10px steps around a 1000px edge
+    // every point sits within corner jitter + max bow of the true outline
+    for (let i = 0; i < a.length; i += 2) {
+      const x = a[i], y = a[i + 1]
+      const d = Math.min(Math.abs(x), Math.abs(x - 300), Math.abs(y), Math.abs(y - 200))
+      expect(d).toBeLessThan(0.45 + 1.3 + 0.01)
+    }
+  })
+
+  it('keeps small shapes proportionally calm', () => {
+    const tiny = bowPolygon([0, 0, 20, 0, 20, 20, 0, 20], 'tiny')
+    for (let i = 0; i < tiny.length; i += 2) {
+      const x = tiny[i], y = tiny[i + 1]
+      const d = Math.min(Math.abs(x), Math.abs(x - 20), Math.abs(y), Math.abs(y - 20))
+      expect(d).toBeLessThan(0.45 + 20 * 0.006 + 0.01)
+    }
+  })
+})
+
 describe('geo polygon builders', () => {
   it('builds each kind with the right vertex count', () => {
     expect(geoPolygon('rectangle', 10, 10).length).toBe(8)
@@ -115,8 +140,24 @@ describe('geo polygon builders', () => {
     expect(geoPolygon('unknown', 10, 10).length).toBe(8) // falls back to rect
   })
 
+  it('cloudPolygon closes without a repeated point and scales with the box', () => {
+    const pts = cloudPolygon(100, 80)
+    expect(pts.length).toBeGreaterThan(40)
+    expect(pts.length % 2).toBe(0)
+    // the final curve lands back on the start, so it must not be emitted twice
+    const n = pts.length
+    expect(pts[n - 2] === pts[0] && pts[n - 1] === pts[1]).toBe(false)
+    // every sample scales linearly with the box
+    const big = cloudPolygon(200, 160)
+    for (let i = 0; i < pts.length; i++) expect(big[i]).toBeCloseTo(pts[i] * 2, 6)
+  })
+
+  it('geoPolygon routes cloud through cloudPolygon', () => {
+    expect(geoPolygon('cloud', 60, 40)).toEqual(cloudPolygon(60, 40))
+  })
+
   it('polygons stay inside their box', () => {
-    for (const kind of ['rectangle', 'triangle', 'diamond', 'hexagon', 'star']) {
+    for (const kind of ['rectangle', 'triangle', 'diamond', 'hexagon', 'star', 'cloud']) {
       const pts = geoPolygon(kind, 40, 30)
       for (let i = 0; i < pts.length; i += 2) {
         expect(pts[i]).toBeGreaterThanOrEqual(0)

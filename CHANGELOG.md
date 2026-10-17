@@ -4,6 +4,20 @@ All notable changes to the `@quickdrawjs/*` packages are documented here.
 The project follows [semver](https://semver.org); the three packages are
 versioned in lockstep.
 
+## 0.3.0 — 2026-10-12
+
+- Text is set in Libre Baskerville, bundled with the engine (SIL OFL 1.1),
+  so it reads the same on every machine; the fallbacks are serifs.
+- Calmer hand-drawn shapes; geo labels take a `labelScale` for type past `xl`.
+- Built-in cloud shape.
+- Keyboard shortcuts overlay (press `?`).
+- Grid: stronger lines and dots in both themes, constant ink through zoom,
+  relaxed spacing, and an isometric weave at twice the step.
+- Blue default ink and canvas chrome that follows the board's theme.
+- Fixed: editing existing text on touch, stray iOS canvas selection, the
+  shape button dropping a selection instead of re-kinding it, and the
+  `GeoId`/`GridId` type unions drifting from `palette.js`.
+
 ## 0.1.3 — 2026-08-01
 
 - The pen (draw) tool is now selected by default when a board mounts,

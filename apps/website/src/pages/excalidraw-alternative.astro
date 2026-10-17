@@ -79,7 +79,7 @@ const jsonLd = {
       <li><strong>You're not using React.</strong> The core is dependency-free ESM. <code>createQuickdraw({'{'} container {'}'})</code> works in any page — no build step required.</li>
       <li><strong>You're building for iOS or Android.</strong> The React Native package brings the full engine to Expo and bare RN apps, with Apple Pencil pressure and palm rejection.</li>
       <li><strong>You want sync without a dedicated server.</strong> Every change emits a JSON diff; apply remote diffs with <code>store.applyDiff(diff, 'remote')</code> over any transport. Excalidraw's collaboration runs through excalidraw-room.</li>
-      <li><strong>You want a small surface.</strong> One store, one editor, one toolbar — ~46 kB of plain ESM you can read in a sitting.</li>
+      <li><strong>You want a small surface.</strong> One store, one editor, one toolbar — ~25 kB minified and gzipped, against ~344 kB for the Excalidraw component. Small enough to read in a sitting.</li>
     </ul>
     <h2>When Excalidraw is the better fit</h2>
     <p>

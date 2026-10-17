@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from 'vitest'
-import { localBounds, pageBounds, hitShape, marqueeHits, scaleShape, textLayout } from '../src/shapes.js'
+import { localBounds, pageBounds, hitShape, marqueeHits, scaleShape, textLayout, geoOutline, resetTextLayouts } from '../src/shapes.js'
 import { Store } from '../src/store.js'
 
 const geo = (over = {}, props = {}) => ({
@@ -137,5 +137,31 @@ describe('text layout', () => {
     expect(mk('').lines.length).toBe(1)
     expect(mk('a\nb\nc').lines.length).toBe(3)
     expect(mk('a\nb\nc').h).toBeGreaterThan(mk('a').h)
+  })
+})
+
+describe('hand-drawn outlines and text re-measure', () => {
+  const geo = (id, g, w = 200, h = 120) => ({ id, typeName: 'shape', type: 'geo', x: 0, y: 0, rot: 0, props: { geo: g, w, h, dash: 'draw' } })
+
+  it('geoOutline is stable per shape and hugs the box', () => {
+    for (const g of ['rectangle', 'ellipse', 'diamond', 'cloud']) {
+      const o = geoOutline(geo('s:' + g, g))
+      expect(o).toEqual(geoOutline(geo('s:' + g, g)))
+      expect(o.smooth).toBe(g === 'ellipse' || g === 'cloud')
+      for (let i = 0; i < o.pts.length; i += 2) {
+        expect(o.pts[i]).toBeGreaterThan(-3)
+        expect(o.pts[i]).toBeLessThan(203)
+        expect(o.pts[i + 1]).toBeGreaterThan(-3)
+        expect(o.pts[i + 1]).toBeLessThan(123)
+      }
+    }
+  })
+
+  it('resetTextLayouts drops cached layouts so text is measured again', () => {
+    const t = { id: 't', typeName: 'shape', type: 'text', x: 0, y: 0, rot: 0, props: { text: 'Hello', size: 'm', color: 'black' } }
+    const a = textLayout(t)
+    expect(textLayout(t)).toBe(a)
+    resetTextLayouts()
+    expect(textLayout(t)).not.toBe(a)
   })
 })

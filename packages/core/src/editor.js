@@ -4,10 +4,10 @@
 // Dependency-free ESM: runs in any modern browser as-is, no build step.
 
 import { Store, newId } from './store.js'
-import { themeOf, SIZES, FONT_SIZES, GEO_IDS, COLOR_IDS, GRID_IDS, GRID_STEP, GRID_MAJOR } from './palette.js'
+import { themeOf, SIZES, FONT_SIZES, FONTS, GEO_IDS, COLOR_IDS, GRID_IDS, GRID_STEP, GRID_BAND, GRID_MAJOR } from './palette.js'
 import {
   localBounds, pageBounds, toLocal, drawShape, hitShape, marqueeHits,
-  scaleShape, textLayout, noteLayout, NOTE_W, sampleLinePts,
+  scaleShape, textLayout, noteLayout, NOTE_W, sampleLinePts, resetTextLayouts,
 } from './shapes.js'
 import { boundsUnion, boundsExpand, boundsContain, clamp, rotWith } from './geometry.js'
 
@@ -18,7 +18,7 @@ const RESIZE_CURSORS = {
   tl: 'nwse-resize', br: 'nwse-resize', tr: 'nesw-resize', bl: 'nesw-resize',
   t: 'ns-resize', b: 'ns-resize', l: 'ew-resize', r: 'ew-resize',
 }
-const DEFAULT_STYLES = { color: 'black', size: 'm', dash: 'draw', fill: 'none', font: 'draw' }
+const DEFAULT_STYLES = { color: 'blue', size: 'm', dash: 'draw', fill: 'none', font: 'draw' }
 
 export const TOOLS = ['select', 'hand', 'draw', 'highlight', 'eraser', 'laser', 'arrow', 'line', 'geo', 'text', 'note']
 
@@ -32,11 +32,11 @@ const bendMidpoint = (pr) => {
 }
 
 export class Editor {
-  constructor({ container, store, theme = 'light', grid = 'none', readonly = false, camera, styles, geoKind } = {}) {
+  constructor({ container, store, theme = 'light', grid = 'lines', readonly = false, camera, styles, geoKind } = {}) {
     this.container = container
     this.store = store || new Store()
     this.theme = themeOf(theme)
-    this.grid = GRID_IDS.includes(grid) ? grid : 'none'
+    this.grid = GRID_IDS.includes(grid) ? grid : 'lines'
     this.readonly = !!readonly
     this.camera = camera || { x: 0, y: 0, z: 1 }
     this.styles = { ...DEFAULT_STYLES, ...(styles || {}) }
@@ -56,6 +56,9 @@ export class Editor {
     this.penMode = false
     this._penSeen = false
     this._penDown = false
+    this._ignoredTouches = new Set()
+    this._gesturePointerId = null
+    this._gesturePointerType = null
     this._events = new Map()
     this._raf = 0
     this._camAnim = 0
@@ -82,6 +85,17 @@ export class Editor {
     // history moves on its own channel: the end of a gesture batch changes
     // canUndo/canRedo without emitting a document diff
     this._unsubHistory = this.store.listenHistory(() => this.emit('history'))
+    // the bundled hand font lands after the first paint: text measured with
+    // the fallback would keep the wrong box, so re-measure when fonts arrive
+    this._onFonts = () => {
+      if (this._destroyed) return
+      resetTextLayouts()
+      this.requestRender()
+    }
+    if (typeof document !== 'undefined' && document.fonts) {
+      document.fonts.addEventListener('loadingdone', this._onFonts)
+      document.fonts.load(`500 20px ${FONTS.draw}`, 'Ag').then(this._onFonts, () => {})
+    }
     this.requestRender()
   }
 
@@ -257,13 +271,64 @@ export class Editor {
   setGeoKind(kind) {
     if (GEO_IDS.includes(kind)) { this.geoKind = kind; this.emit('tool') }
   }
+  // the selected geo shapes' shared kind: undefined when none is selected,
+  // null when they differ
+  selectedGeoKind() {
+    let kind
+    for (const id of this.selection) {
+      const s = this.store.get(id)
+      if (s?.type !== 'geo') continue
+      if (kind === undefined) kind = s.props.geo
+      else if (kind !== s.props.geo) return null
+    }
+    return kind
+  }
+  // re-kind the selected geo shapes in place (a box becomes an ellipse) — the
+  // shape picker's answer to a selection, which therefore stays selected
+  setSelectedGeoKind(kind) {
+    if (!GEO_IDS.includes(kind)) return
+    this.geoKind = kind
+    const ids = [...this.selection].filter((id) => this.store.get(id)?.type === 'geo')
+    if (ids.length) this.store.transact(() => { for (const id of ids) this.store.update(id, { props: { geo: kind } }) })
+    this.emit('tool')
+  }
   setTheme(id) {
     const t = themeOf(id)
     if (t === this.theme) return
+    this._crossfadeTheme()
     this.theme = t
     this.container.dataset.qdTheme = t.id
     this.requestRender()
     this.emit('theme')
+  }
+  // Freeze the outgoing theme as a bitmap over the board and fade it out, so
+  // a theme switch melts from one paper to the other instead of hard-cutting.
+  _crossfadeTheme() {
+    if (this._destroyed) return
+    if (typeof window !== 'undefined' &&
+        window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return
+    const w = this.canvas.width, h = this.canvas.height
+    if (!w || !h) return
+    try {
+      const snap = document.createElement('canvas')
+      snap.width = w
+      snap.height = h
+      snap.getContext('2d').drawImage(this.canvas, 0, 0)
+      snap.className = 'qd-theme-fade'
+      this._themeFade?.remove()
+      this._themeFade = snap
+      this.overlay.after(snap)
+      // two frames: one to paint at full opacity, one to start the transition
+      requestAnimationFrame(() => requestAnimationFrame(() => { snap.style.opacity = '0' }))
+      const done = () => {
+        snap.remove()
+        if (this._themeFade === snap) this._themeFade = null
+      }
+      snap.addEventListener('transitionend', done, { once: true })
+      setTimeout(done, 600) // safety net if transitionend never fires
+    } catch {
+      // a stubbed 2D context (tests, exotic embeds) just skips the fade
+    }
   }
   // 'none' | 'lines' | 'dots' — the backdrop behind the drawing
   setGrid(id) {
@@ -289,6 +354,7 @@ export class Editor {
     const pts = []
     for (const [id, p] of this._pointers) {
       if (this.penMode && this._ptrType.get(id) === 'pen') continue
+      if (this.penMode && this._ignoredTouches.has(id)) continue
       pts.push(p)
     }
     return pts
@@ -422,10 +488,26 @@ export class Editor {
     this._onDrop = (e) => this._drop(e)
     this._onDragOver = (e) => { e.preventDefault(); e.stopPropagation() }
     this._onPaste = (e) => this._paste(e)
+    // iOS Safari reads a finger or Apple Pencil drag on the board as a text
+    // selection and paints the whole canvas blue — the board surface opts
+    // out of touch defaults and selection (the text editor keeps both)
+    this._onTouchStart = (e) => { if (this._isSurface(e.target)) e.preventDefault() }
+    this._onSelectStart = (e) => { if (!isTextField(e.target)) e.preventDefault() }
+    c.addEventListener('touchstart', this._onTouchStart, { passive: false })
+    c.addEventListener('selectstart', this._onSelectStart)
     c.addEventListener('pointerdown', this._onDown)
     c.addEventListener('pointermove', this._onMove)
     c.addEventListener('pointerup', this._onUp)
     c.addEventListener('pointercancel', this._onUp)
+    this._onLostCapture = (e) => {
+      // Normal pointerup/cancel already removed this pointer. Unexpected loss
+      // must close the gesture without treating it as a text-editing tap.
+      if (this._pointers.has(e.pointerId)) {
+        this._tapStart = null
+        this._endPointer(e, true)
+      }
+    }
+    c.addEventListener('lostpointercapture', this._onLostCapture)
     c.addEventListener('wheel', this._onWheel, { passive: false })
     c.addEventListener('keydown', this._onKeyDown)
     c.addEventListener('keyup', this._onKeyUp)
@@ -438,7 +520,7 @@ export class Editor {
     // gestures outright; the CSS guards above already kill the touch callout,
     // this covers the pointer-device path it can't reach.
     this._onContextMenu = (e) => {
-      if (e.target !== this.canvas && e.target !== this.overlay && e.target !== this.container) return
+      if (!this._isSurface(e.target)) return
       e.preventDefault()
     }
     c.addEventListener('contextmenu', this._onContextMenu)
@@ -446,8 +528,56 @@ export class Editor {
     // blurring the board) must not leave a sticky space-pan behind
     this._onBlur = () => { this.spaceHeld = false; this._syncCursor() }
     c.addEventListener('blur', this._onBlur)
+    this._onWindowBlur = () => this._finishInput()
+    this._onVisibility = () => { if (document.hidden) this._finishInput() }
+    window.addEventListener('blur', this._onWindowBlur)
+    document.addEventListener('visibilitychange', this._onVisibility)
     this._ro = new ResizeObserver(() => this.requestRender())
     this._ro.observe(c)
+  }
+
+  _isSurface(t) {
+    if (!t || !this.container.contains(t)) return false
+    if (t.closest?.('.qd-root') !== this.container) return false
+    // Plain layout/decoration descendants belong to the board. Controls and
+    // floating chrome keep their own input, including nested icons and labels.
+    return !t.closest?.('.qd-ui, .qd-watermark, a, button, input, textarea, select, [contenteditable], [role="button"], [role="menuitem"], [data-qd-interactive]')
+  }
+
+  _traceInput(e, result) {
+    if (!this._events.has('input')) return
+    this.emit('input', {
+      result, pointerId: e.pointerId, pointerType: e.pointerType,
+      target: e.target?.tagName || '',
+      targetId: e.target?.id || '',
+      targetClass: e.target?.getAttribute?.('class') || '',
+      x: e.clientX, y: e.clientY,
+      pointers: this._pointers.size, ignoredTouches: this._ignoredTouches.size,
+      session: this.session?.type || null, penMode: this.penMode,
+    })
+  }
+
+  _finishInput() {
+    // Preserve ink already laid down when the iframe/page loses its input.
+    // Calling the normal end path also closes the stroke's undo batch.
+    if (this.session && this.session.type !== 'pinch' && this._gesturePointerId !== null) {
+      this._endPointer({ pointerId: this._gesturePointerId, pointerType: this._gesturePointerType }, true)
+    }
+    this.session = null
+    this._gesturePointerId = null
+    this._gesturePointerType = null
+    this._penDown = false
+    this._tapStart = null
+    this._lastTap = null
+    this.spaceHeld = false
+    const ids = [...this._pointers.keys()]
+    this._pointers.clear()
+    this._ptrType.clear()
+    this._ignoredTouches.clear()
+    for (const id of ids) {
+      try { this.container.releasePointerCapture(id) } catch {}
+    }
+    this._syncCursor()
   }
 
   _evPoint(e) {
@@ -456,20 +586,40 @@ export class Editor {
   }
 
   _pointerDown(e) {
-    if (this.readonly) return
-    if (e.target !== this.canvas && e.target !== this.overlay && e.target !== this.container) return
-    if (e.button === 2) return
+    if (this.readonly) return this._traceInput(e, 'readonly')
+    if (!this._isSurface(e.target)) return this._traceInput(e, 'interactive-target')
+    if (e.button === 2) return this._traceInput(e, 'secondary-button')
+    if (e.pointerType !== 'mouse' && e.cancelable !== false) e.preventDefault()
+    // A fresh pen down cannot belong to the previous contact. Recover if the
+    // browser omitted that contact's up/cancel/capture-loss notification.
+    if (e.pointerType === 'pen' && this.session && this._gesturePointerType === 'pen') this._finishInput()
     if (this.editing) this._commitText()
     this.container.focus({ preventScroll: true })
     const s = this._evPoint(e)
+    // a second pointer turns whatever this was into a gesture, never a tap
+    this._tapStart = this._pointers.size ? null : { id: e.pointerId, type: e.pointerType, x: s.x, y: s.y, t: performance.now() }
     this._pointers.set(e.pointerId, s)
     this._ptrType.set(e.pointerId, e.pointerType)
+    if (e.pointerType === 'mouse') this._lastPtr = 'mouse'
     try { this.container.setPointerCapture(e.pointerId) } catch {}
 
     if (e.pointerType === 'pen') {
       this._penDown = true
       // first stylus contact arms pen mode, once — turning it off is a choice
       if (!this._penSeen) { this._penSeen = true; this.setPenMode(true) }
+      if (this.penMode) {
+        // A palm can become a pinch BETWEEN strokes. The next Pencil contact
+        // takes priority over that pinch and over any number of palm points.
+        if (this.session?.type === 'pinch' || this._gesturePointerType === 'touch') this._abortForPinch()
+        for (const [id, type] of this._ptrType) {
+          if (type === 'touch') this._ignoredTouches.add(id)
+        }
+      }
+    }
+
+    if (this.penMode && this._penDown && e.pointerType === 'touch') {
+      this._ignoredTouches.add(e.pointerId)
+      return this._traceInput(e, 'palm')
     }
 
     // second finger: the gesture becomes a pinch — a just-started stroke is
@@ -486,14 +636,24 @@ export class Editor {
           center: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
           cam: { ...this.camera },
         }
+        this._gesturePointerId = null
+        this._gesturePointerType = null
+        this._traceInput(e, 'pinch')
         return
       }
-      if (pp.length > 2) return
+      if (pp.length > 2) return this._traceInput(e, 'pointer-limit')
     }
     // in pen mode a finger never draws
-    if (this.penMode && e.pointerType === 'touch') return
-    if (this._pointers.size > 2) return
-    if (this.session?.type === 'pinch') return
+    if (this.penMode && e.pointerType === 'touch') return this._traceInput(e, 'finger-in-pen-mode')
+    if (!(this.penMode && e.pointerType === 'pen')) {
+      if (this._pointers.size > 2) return this._traceInput(e, 'pointer-limit')
+      if (this.session?.type === 'pinch') return this._traceInput(e, 'pinch-active')
+    }
+    // A second unrelated device must not replace an active stroke.
+    if (this.session) return this._traceInput(e, 'gesture-active')
+    this._gesturePointerId = e.pointerId
+    this._gesturePointerType = e.pointerType
+    this._traceInput(e, 'accepted')
 
     const p = this.screenToPage(s.x, s.y)
     if (e.button === 1 || this.spaceHeld || this.tool === 'hand') {
@@ -512,10 +672,14 @@ export class Editor {
       case 'geo': return this._beginGeo(p, e)
       // placing waits for pointerup: the textarea we focus would otherwise be
       // blurred again by the browser's default focus-on-mousedown action
+      // a tap on existing text edits it instead of stacking a new box on top
       case 'text':
-      case 'note':
-        this.session = { type: 'placing', tool: this.tool, page: p }
+      case 'note': {
+        const hit = this.hitTest(p.x, p.y)
+        const edit = hit && (hit.type === 'text' || hit.type === 'note') ? hit.id : null
+        this.session = { type: 'placing', tool: this.tool, page: p, edit }
         return
+      }
       case 'select': return this._beginSelect(e, s, p)
     }
   }
@@ -528,6 +692,7 @@ export class Editor {
       this._hoverCursor(e)
       return
     }
+    if (ss.type !== 'pinch' && e.pointerId !== this._gesturePointerId) return
     // in pen mode a finger only ever steers the camera — a palm dragging
     // across the glass must not extend the pen's stroke
     if (this.penMode && e.pointerType === 'touch' && ss.type !== 'pinch' && ss.type !== 'panning') return
@@ -584,8 +749,38 @@ export class Editor {
   }
 
   _pointerUp(e) {
+    const tap = this._tapOf(e)
+    this._endPointer(e, e.type === 'pointercancel')
+    if (tap) this._noteTap(tap)
+  }
+
+  // A quick, still press-and-lift. Touch and pen taps feed the double-tap
+  // check below — iPad Safari never sends dblclick for them; the mouse keeps
+  // the native dblclick.
+  _tapOf(e) {
+    const st = this._tapStart
+    if (!st || st.id !== e.pointerId) return null
+    this._tapStart = null
+    if (e.type === 'pointercancel') return null
+    if (e.pointerType === 'mouse') return null
+    const s = this._evPoint(e)
+    const now = performance.now()
+    if (now - st.t > 350 || Math.hypot(s.x - st.x, s.y - st.y) > 10) return null
+    return { type: st.type, x: s.x, y: s.y, t: now, clientX: e.clientX, clientY: e.clientY }
+  }
+  _noteTap(tap) {
+    this._lastPtr = tap.type
+    const prev = this._lastTap
+    const dbl = prev && prev.type === tap.type && tap.t - prev.t < 400 && Math.hypot(tap.x - prev.x, tap.y - prev.y) < 24
+    this._lastTap = dbl ? null : tap
+    // the tap itself may already have opened the editor (a tap on selected text)
+    if (dbl && !this.editing) this._dblClick({ clientX: tap.clientX, clientY: tap.clientY })
+  }
+
+  _endPointer(e, cancelled = false) {
     this._pointers.delete(e.pointerId)
     this._ptrType.delete(e.pointerId)
+    this._ignoredTouches.delete(e.pointerId)
     if (e.pointerType === 'pen') this._penDown = false
     const ss = this.session
     if (!ss) return
@@ -593,8 +788,16 @@ export class Editor {
       if (this._pinchPoints().length < 2) this.session = null
       return
     }
-    // a palm lift in pen mode must not end the pen's live stroke
-    if (this.penMode && e.pointerType === 'touch' && ss.type !== 'panning') return
+    if (e.pointerId !== this._gesturePointerId) return
+    this._gesturePointerId = null
+    this._gesturePointerType = null
+    if (cancelled && (ss.type === 'placing' || ss.type === 'pressing')) {
+      this.session = null
+      this.requestRender()
+      return
+    }
+    // The owner check above already excludes palm lifts, including when pen
+    // mode was toggled during a gesture that began with a finger.
     switch (ss.type) {
       case 'panning':
         this.session = null
@@ -612,7 +815,11 @@ export class Editor {
       case 'translating': return this._endTranslate()
       case 'placing': {
         this.session = null
-        ss.tool === 'note' ? this._placeNote(ss.page) : this._placeText(ss.page)
+        if (ss.edit && this.store.has(ss.edit)) {
+          this.setTool('select')
+          this.setSelection([ss.edit])
+          this._startTextEdit(ss.edit, 'text')
+        } else ss.tool === 'note' ? this._placeNote(ss.page) : this._placeText(ss.page)
         return
       }
       case 'resizing':
@@ -624,6 +831,13 @@ export class Editor {
         this.requestRender()
         return
       case 'pressing': {
+        // tapping text that was already the lone selection opens it for
+        // editing — the one-tap path that works with a finger or a pencil
+        if (ss.hit && ss.wasOnly && !ss.additive && (ss.hit.type === 'text' || ss.hit.type === 'note') && this.store.has(ss.hit.id)) {
+          this.session = null
+          this._startTextEdit(ss.hit.id, 'text')
+          return
+        }
         // a clean click: selection settles to the pressed shape (or clears);
         // an additive click toggles — unless the down-stroke just added it
         if (ss.hit) this.setSelection(ss.additive ? (ss.added ? [...this.selection] : this._toggled(ss.hit.id)) : [ss.hit.id])
@@ -653,6 +867,8 @@ export class Editor {
       this.store.endBatch()
     }
     this.session = null
+    this._gesturePointerId = null
+    this._gesturePointerType = null
   }
   _cancelSession() {
     this._abortForPinch()
@@ -880,7 +1096,7 @@ export class Editor {
     this.store.put({
       id, typeName: 'shape', type: 'note', x: p.x - NOTE_W / 2, y: p.y - NOTE_W / 2, rot: 0,
       z: this.store.maxZ() + 1,
-      props: { text: '', color: this.styles.color === 'black' ? 'yellow' : this.styles.color, size: 'm', font: this.styles.font, scale: 1 },
+      props: { text: '', color: this.styles.color === DEFAULT_STYLES.color ? 'yellow' : this.styles.color, size: 'm', font: this.styles.font, scale: 1 },
     })
     this.setTool('select')
     this.setSelection([id])
@@ -944,7 +1160,7 @@ export class Editor {
       ta.style.lineHeight = lay.lh * s * z + 'px'
     } else if (shape.type === 'geo' && ed.field === 'label') {
       const p = shape.props
-      const fs = FONT_SIZES[p.labelSize || 's']
+      const fs = FONT_SIZES[p.labelSize || 's'] * (p.labelScale || 1)
       const fam = FONTS[p.font || 'draw']
       pos = this.pageToScreen(shape.x + 8, shape.y + 8)
       w = p.w - 16
@@ -1017,11 +1233,12 @@ export class Editor {
     const hit = this.hitTest(p.x, p.y)
     if (hit) {
       const wasSelected = this.selection.has(hit.id)
+      const wasOnly = wasSelected && this.selection.size === 1
       if (!wasSelected && !additive) this.setSelection([hit.id])
       else if (additive && !wasSelected) this.setSelection([...this.selection, hit.id])
       // `added` marks a shape shift-selected on the way down, so the clean
       // click on the way up keeps it instead of toggling it straight back out
-      this.session = { type: 'pressing', hit, additive, added: additive && !wasSelected, start: s, page: p }
+      this.session = { type: 'pressing', hit, additive, added: additive && !wasSelected, wasOnly, start: s, page: p }
     } else {
       this.session = { type: 'marquee', origin: p, rect: null, additive, base: [...this.selection] }
       if (!additive) this.setSelection([])
@@ -1198,10 +1415,14 @@ export class Editor {
 
   _dblClick(e) {
     if (this.readonly || this.tool !== 'select') return
+    // a native dblclick that trails a touch/pen double-tap was handled already
+    if (e.type === 'dblclick' && this._lastPtr && this._lastPtr !== 'mouse') return
     const s = this._evPoint(e)
     const p = this.screenToPage(s.x, s.y)
     const hit = this.hitTest(p.x, p.y)
     if (hit) {
+      // the second click of a double-click already opened this text: select it all
+      if (this.editing && this.editing.id === hit.id) { this.editing.textarea.select(); return }
       if (hit.type === 'text' || hit.type === 'note') {
         this.setSelection([hit.id])
         this._startTextEdit(hit.id, 'text')
@@ -1241,6 +1462,8 @@ export class Editor {
       else this.setTool('select')
       return
     }
+    // the UI layer listens for this and toggles the shortcuts overlay
+    if (k === '?') { e.preventDefault(); this.emit('help'); return }
     // wipe the board — two modifiers deep, and undoable like any other edit
     if (meta && e.shiftKey && (k === 'delete' || k === 'backspace')) {
       e.preventDefault()
@@ -1519,55 +1742,106 @@ export class Editor {
   }
 
   // The lattice, drawn in device pixels so rules stay hairline-crisp at any
-  // zoom. Spacing doubles or halves to stay in a comfortable band, and a new
-  // level fades in as you zoom rather than popping into place.
+  // zoom. The step lives in a one-octave band of screen px. Every other mark
+  // (the coarse lattice) is drawn at full ink; the marks between fade in as
+  // the spacing opens up, at exactly the rate that holds the ink per screen
+  // area constant. So zooming never lightens, darkens or pops: by the top of
+  // the octave the in-between marks are at full ink, and the picture is the
+  // next level's coarse lattice.
   // W/H are device px; the ctx must be untransformed.
   _drawGrid(ctx, cam, W, H, dpr) {
     if (this.grid === 'none' || !(cam.z > 0)) return
-    const g = this.theme.grid?.[this.grid === 'dots' ? 'dot' : 'line']
+    // point-like marks (dots, crosses) carry less ink, so they use the darker ramp
+    const points = this.grid === 'dots' || this.grid === 'crosses'
+    const g = this.theme.grid?.[points ? 'dot' : 'line']
     if (!g) return
-    let step = GRID_STEP
-    while (step * cam.z < 18) step *= 2
-    while (step * cam.z > 72) step /= 2
-    const fade = clamp((step * cam.z - 16) / 14, 0, 1)
-    if (fade <= 0) return
+    // the fine step: half the visible lattice (GRID_STEP at zoom 1)
+    let step = GRID_STEP / 2
+    while (step * cam.z < GRID_BAND) step *= 2
+    while (step * cam.z >= GRID_BAND * 2) step /= 2
+    const r = (step * cam.z) / GRID_BAND // 1 → 2 across the octave
+    // ink of the in-between marks: lines per px stay constant at r − 1,
+    // points per px² at (r² − 1) / 3
+    const fade = points ? (r * r - 1) / 3 : r - 1
     const z = cam.z * dpr
     // first line/dot of each axis that lands inside the frame
     const n0 = Math.ceil(-cam.x / step)
     const m0 = Math.ceil(-cam.y / step)
-    const isMajor = (i) => i % GRID_MAJOR === 0
     const cols = [], rows = []
-    for (let n = n0, x = (n0 * step + cam.x) * z; x <= W; n++, x += step * z) cols.push([x, isMajor(n)])
-    for (let m = m0, y = (m0 * step + cam.y) * z; y <= H; m++, y += step * z) rows.push([y, isMajor(m)])
+    for (let n = n0, x = (n0 * step + cam.x) * z; x <= W; n++, x += step * z) cols.push([x, n])
+    for (let m = m0, y = (m0 * step + cam.y) * z; y <= H; m++, y += step * z) rows.push([y, m])
+    const mod = (i, m) => ((i % m) + m) % m
+    // Four passes, by ink and weight. Even indices are the coarse lattice;
+    // majors fall on every GRID_MAJOR-th coarse mark, and the odd multiples
+    // are the next level's majors, fading in with the rest.
+    const MINOR = 0, MINOR_FADE = 1, MAJOR = 2, MAJOR_FADE = 3
+    const passes = [[g.minor, 1], [g.minor, fade], [g.major, 1], [g.major, fade]]
+    const lineKind = (i) =>
+      mod(i, 2 * GRID_MAJOR) === 0 ? MAJOR : mod(i, GRID_MAJOR) === 0 ? MAJOR_FADE : mod(i, 2) === 0 ? MINOR : MINOR_FADE
+    const pointKind = (n, m) =>
+      mod(n, 2 * GRID_MAJOR) === 0 && mod(m, 2 * GRID_MAJOR) === 0 ? MAJOR
+        : mod(n, GRID_MAJOR) === 0 && mod(m, GRID_MAJOR) === 0 ? MAJOR_FADE
+          : mod(n, 2) === 0 && mod(m, 2) === 0 ? MINOR : MINOR_FADE
 
     ctx.save()
-    if (this.grid === 'lines') {
-      for (const major of [false, true]) {
-        ctx.beginPath()
+    ctx.lineWidth = 1
+    passes.forEach(([ink, alpha], kind) => {
+      if (!(alpha > 0)) return
+      ctx.beginPath()
+      if (this.grid === 'lines' || this.grid === 'ruled') {
         // half-pixel offsets keep a 1px rule on one device pixel, not two
-        for (const [x, m] of cols) if (m === major) { const p = Math.round(x) + 0.5; ctx.moveTo(p, 0); ctx.lineTo(p, H) }
-        for (const [y, m] of rows) if (m === major) { const p = Math.round(y) + 0.5; ctx.moveTo(0, p); ctx.lineTo(W, p) }
-        ctx.strokeStyle = major ? g.major : g.minor
-        ctx.globalAlpha = fade
-        ctx.lineWidth = 1
-        ctx.stroke()
-      }
-    } else {
-      for (const major of [false, true]) {
-        const r = (major ? 2.3 : 1.6) * dpr
-        ctx.beginPath()
-        for (const [y, my] of rows) {
-          for (const [x, mx] of cols) {
-            if ((mx && my) !== major) continue
-            ctx.moveTo(x + r, y)
-            ctx.arc(x, y, r, 0, Math.PI * 2)
+        if (this.grid === 'lines') {
+          for (const [x, n] of cols) if (lineKind(n) === kind) { const p = Math.round(x) + 0.5; ctx.moveTo(p, 0); ctx.lineTo(p, H) }
+        }
+        for (const [y, m] of rows) if (lineKind(m) === kind) { const p = Math.round(y) + 0.5; ctx.moveTo(0, p); ctx.lineTo(W, p) }
+      } else if (this.grid === 'crosses') {
+        // a small + at each intersection — the draughtsman's registration marks
+        const arm = (kind >= MAJOR ? 4.5 : 3) * dpr
+        for (const [y, m] of rows) {
+          const py = Math.round(y) + 0.5
+          for (const [x, n] of cols) {
+            if (pointKind(n, m) !== kind) continue
+            const px = Math.round(x) + 0.5
+            ctx.moveTo(px - arm, py); ctx.lineTo(px + arm, py)
+            ctx.moveTo(px, py - arm); ctx.lineTo(px, py + arm)
           }
         }
-        ctx.fillStyle = major ? g.major : g.minor
-        ctx.globalAlpha = fade
-        ctx.fill()
+      } else if (this.grid === 'iso') {
+        // isometric weave: the two 30° diagonal families make a diamond lattice
+        // that stays self-aligned at every zoom. One quiet weight — major
+        // emphasis turns a woven field into noise.
+        if (kind >= MAJOR) return
+        const s = Math.tan(Math.PI / 6) // 30° from horizontal
+        for (const sign of [1, -1]) {
+          const slope = sign * s
+          // page-space intercepts k*step, mapped into device space
+          const b0 = -slope * cam.x + cam.y // device intercept of the k=0 line, /z
+          const lo = Math.min(0, -slope * (W / z)) // device-x range → intercept range
+          const hi = Math.max(H / z, H / z - slope * (W / z))
+          const k0 = Math.ceil((lo - b0) / step)
+          const k1 = Math.floor((hi - b0) / step)
+          for (let k = k0; k <= k1; k++) {
+            if ((mod(k, 2) === 0 ? MINOR : MINOR_FADE) !== kind) continue
+            const b = (b0 + k * step) * z
+            ctx.moveTo(0, b)
+            ctx.lineTo(W, b + slope * W)
+          }
+        }
+      } else {
+        // one weight, one ink — emphasized dots read as stray marks on the paper
+        if (kind >= MAJOR) return
+        const rad = 1.6 * dpr
+        for (const [y, m] of rows) {
+          for (const [x, n] of cols) {
+            if ((mod(n, 2) === 0 && mod(m, 2) === 0 ? MINOR : MINOR_FADE) !== kind) continue
+            ctx.moveTo(x + rad, y)
+            ctx.arc(x, y, rad, 0, Math.PI * 2)
+          }
+        }
       }
-    }
+      ctx.globalAlpha = alpha
+      if (this.grid === 'dots') { ctx.fillStyle = ink; ctx.fill() } else { ctx.strokeStyle = ink; ctx.stroke() }
+    })
     ctx.restore()
   }
 
@@ -1782,19 +2056,26 @@ export class Editor {
 
   destroy() {
     this._destroyed = true
+    this._finishInput()
     this._commitText()
+    this._themeFade?.remove()
+    this._themeFade = null
     cancelAnimationFrame(this._raf)
     cancelAnimationFrame(this._camAnim)
     cancelAnimationFrame(this._fitEaseRaf || 0)
     cancelAnimationFrame(this._laserRaf || 0)
     this._unsubStore()
     this._unsubHistory()
+    if (typeof document !== 'undefined' && document.fonts) document.fonts.removeEventListener('loadingdone', this._onFonts)
     this._ro.disconnect()
     const c = this.container
+    c.removeEventListener('touchstart', this._onTouchStart)
+    c.removeEventListener('selectstart', this._onSelectStart)
     c.removeEventListener('pointerdown', this._onDown)
     c.removeEventListener('pointermove', this._onMove)
     c.removeEventListener('pointerup', this._onUp)
     c.removeEventListener('pointercancel', this._onUp)
+    c.removeEventListener('lostpointercapture', this._onLostCapture)
     c.removeEventListener('wheel', this._onWheel)
     c.removeEventListener('keydown', this._onKeyDown)
     c.removeEventListener('keyup', this._onKeyUp)
@@ -1804,11 +2085,15 @@ export class Editor {
     c.removeEventListener('paste', this._onPaste)
     c.removeEventListener('contextmenu', this._onContextMenu)
     c.removeEventListener('blur', this._onBlur)
+    window.removeEventListener('blur', this._onWindowBlur)
+    document.removeEventListener('visibilitychange', this._onVisibility)
     this.canvas.remove()
     this.overlay.remove()
     c.classList.remove('qd-root')
   }
 }
+
+const isTextField = (t) => !!t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT' || t.isContentEditable)
 
 // decode + gently downscale an imported image, return a dataURL asset
 async function readImage(blob) {

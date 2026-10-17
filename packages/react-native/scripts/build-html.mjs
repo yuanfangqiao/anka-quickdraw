@@ -18,7 +18,7 @@ const result = await build({
   target: ['es2020'],
   minify: true,
   outdir: 'out',
-  loader: { '.css': 'css' },
+  loader: { '.css': 'css', '.woff2': 'dataurl' },
 })
 
 let js = ''

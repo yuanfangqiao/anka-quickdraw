@@ -1,6 +1,7 @@
 import { createQuickdraw } from '@quickdrawjs/core'
 import '@quickdrawjs/core/quickdraw.css'
 import { createSync } from './sync.js'
+import { createInputDebug } from './input-debug.js'
 
 const LEGACY_DOC_KEY = 'quickdraw-app-doc'
 const THEME_KEY = 'quickdraw-app-theme'
@@ -13,7 +14,7 @@ const theme = localStorage.getItem(THEME_KEY) || (prefersDark ? 'dark' : 'light'
 const board = createQuickdraw({
   container: document.getElementById('board'),
   theme,
-  grid: 'dots',
+  grid: 'lines',
 })
 
 const { editor } = board
@@ -131,6 +132,7 @@ store.listen((diff) => sync.publish(diff), { source: 'user' })
 window.__qd = {
   store,
   sync,
+  inputDebug: createInputDebug(editor),
   get snapshot() { return store.getSnapshot() },
   get shapes() { return Object.keys(store.getSnapshot()?.document?.store || {}).length },
   get syncState() { return document.documentElement.dataset.sync },
@@ -265,14 +267,12 @@ nameInput.addEventListener('blur', () => {
 openFile(currentFile().id)
 sizeNameInput()
 
-// Remember the theme across visits; the chrome follows the board's colors.
-const logo = document.getElementById('logo')
+// Remember the theme across visits; the chrome follows the board through the
+// root .dark class (the CSS variables up in index.html key off it).
 const syncTheme = () => {
   const dark = editor.theme.id === 'dark'
   localStorage.setItem(THEME_KEY, editor.theme.id)
-  logo.classList.toggle('dark', dark)
-  filebar.classList.toggle('dark', dark)
-  menu.classList.toggle('dark', dark)
+  document.documentElement.classList.toggle('dark', dark)
   document.querySelector('meta[name="theme-color"]')
     ?.setAttribute('content', dark ? '#1e1e1c' : '#faf8f4')
 }
