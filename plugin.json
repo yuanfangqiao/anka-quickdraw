@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "id": "anka-quickdraw",
-  "name": "QuickDraw",
+  "name": "白板",
   "version": "0.3.0",
   "icon": "pen-tool",
   "description": "白板/绘图应用",
